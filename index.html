@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>JavaScript エフェクトサンプル</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            background-color: black;
+            color: white;
+            height: 100%;
+        }
+
+        #effectCanvas {
+            display: block;
+            margin: 30px auto;
+            background-color: transparent;
+        }
+    </style>
+</head>
+<body>
+    <h1>エフェクトプレビュー</h1>
+    <select id="effectSelector">
+        <option value="heal">回復</option>
+    </select>
+    <canvas id="effectCanvas" width="500" height="500" style="border:1px solid #ccc;"></canvas>
+
+    <script type="module" src="scripts/main.js"></script>
+</body>
+</html>

@@ -14,4 +14,5 @@ JavaScript をモジュールとしてインポートしております。
 商用・非商用問わず利用可能です。再配布や改変も自由に行えます。
 
 ## 備考
-まだ「回復エフェクト」しかありませんが、今後不定期で追加予定、discussion から作成依頼も歓迎！
+まだ「回復エフェクト」しかありませんが、今後不定期で追加予定、discussion から作成依頼も歓迎！  
+新しいエフェクトのアイデアやご要望は [Discussions - Ideas](https://github.com/TAKASHI-S97/GameEffect/discussions/1) にて受け付けています。

@@ -1,5 +1,6 @@
 // エフェクトアニメーションのモジュールを読込
 import { runHealEffect } from './effects/heal.js';
+import { runBloodEffect } from './effects/blood.js';
 
 // canvas の下準備
 const canvas = document.getElementById('effectCanvas');
@@ -11,6 +12,7 @@ let currentEffect = null;
 // エフェクト集の連想配列
 const effects = {
   heal: runHealEffect,
+  blood: runBloodEffect
 };
 
 // 現在実行中のエフェクトを終了

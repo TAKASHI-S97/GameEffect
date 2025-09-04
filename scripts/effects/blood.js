@@ -15,23 +15,6 @@ export function runBloodEffect(canvas, ctx) {
     // 線形補間
     const lerp = (a, b, t) => a + (b - a) * t;
 
-    // 円周上の最短角度差正規化関数
-    const shortest = (a, b) => {
-        let d = norm(b - a);
-        return d > Math.PI ? d - TAU : d;
-    }
-
-    // 対数正規分布の確率変数取得関数
-    function logNormal(mu = 0, sigma = 0.25) {
-        // ボックスミュラー法で、一様分布の乱数から標準正規分布の乱数を作る
-        const u1 = Math.random();
-        const u2 = Math.random();
-        const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-
-        // 対数正規化
-        return Math.exp(mu + sigma * z);
-    }
-
     // 2D ベクター関数
     const vector2 = (x, y) => ({
         x,
@@ -57,61 +40,6 @@ export function runBloodEffect(canvas, ctx) {
         centerX + Math.cos(a) * r,
         centerY + Math.sin(a) * r
     );
-
-    // 円とベクトルの交点を取得する関数
-    function circleLineIntersections(O, r, S, E) {
-        /*
-            始点から終点の直線上の点（円との交点も含む）を P(t) とし、
-            P(t) = S + td で表現できます。（d は始点から終点のベクトル d = E-S）
-            円心 O 半径 r の場合、 |P(t) - O|^2 = r^2 で解けます（ピタゴラスの定理）
-            展開した二次方程式 a·t^2 + b·t + c = 0 の内、
-            a = d·d, b = 2d·(S - O), c = |S - O|^2 - r^2 になります。
-            判別式 D = b^2 - 4ac で交点数を判定（D < 0: 交点なし、D = 0: 交点が 1 つ、ベクトル自体が接線上にある、D > 0: 交点が 2 つ）
-            t の解は、-((b ± √D) / (2a))
-        */
-        const d = E.sub(S);                 // 方向ベクトル
-        const f = S.sub(O);                 // S->O
-
-        const a = d.dot(d);
-        const b = 2 * d.dot(f);
-        const c = f.dot(f) - r * r;
-
-        const D = b * b - 4 * a * c;
-        if (D < 0) return [];               // 交わらない
-
-        const sqrtD = Math.sqrt(Math.max(0, D));
-        const t1 = (-b - sqrtD) / (2*a);
-        const t2 = (-b + sqrtD) / (2*a);
-
-        return [ S.add(d.scale(t1)), S.add(d.scale(t2)) ];
-    }
-
-    // 2 点の内、指定した角度範囲内にある方を取得
-    function pickPointBetweenAngles(O, P1, P2, aFrom, aTo) {
-        // 角度を求める関数
-        const ang = p => Math.atan2(p.y - O.y, p.x - O.x);
-
-        // 指定角度の正規化
-        let A = norm(aFrom), B = norm(aTo);
-        if (B <= A) B += TAU;               // 正方向で [A,B)
-
-        // 角度が範囲内かチェックする関数
-        const inRange = (theta) => {
-            let t = norm(theta);
-            if (t < A) t += TAU;
-            return t < B;
-        };
-
-        // 指定した 2 点の角度
-        const a1 = ang(P1), a2 = ang(P2);
-
-        // 区間内の方を優先。両方/どちらも外なら，より近い方を返す等の方針で。
-        if (inRange(a1) && !inRange(a2)) return P1;
-        if (!inRange(a1) && inRange(a2)) return P2;
-
-        // どちらも該当しない/両方該当 → cp0 に近い方を採用
-        return (P1.sub(O).length() < P2.sub(O).length()) ? P1 : P2;
-    }
 
     /* 描画領域の中心座標を取得 */
     const width = canvas.width;                     // canvas の幅
@@ -143,6 +71,94 @@ export function runBloodEffect(canvas, ctx) {
         bumps[spikeIdx % bumps.length].r = randIn(1.8, 2.0) * basicRadius;
     }
 
+    /* 血しぶきの描画 */
+    function drawTearDrops() {
+        ctx.save();
+        
+        for (let i = 0; i < bumps.length; i++) {
+            // 現在の出っ張りはスパイクがどうかで、血しぶきの個数を調整（スパイクは確実に 1 個、通常出っ張りは 0~1 個）
+            const dropCount = bumps[i].r > basicRadius * 1.35 ? 1 : Math.floor(randIn(0, 2));
+
+            for (let j = 0; j < dropCount; j++) {
+                const P = polarToXY(centerX, centerY, bumps[i].a, bumps[i].r);              // 現在の出っ張りの頂点座標 P
+
+                const angle = bumps[i].a + randIn(-Math.PI / 180, Math.PI / 180);           // 角度は ±1 度の偏差
+                const radius = bumps[i].r + lerp(10, 40, bumps[i].r / (basicRadius * 2));   // 半径は出っ張りから 10~40px 離れたところ（出っ張りが尖っていれば尖っている程離れる）
+                const S = polarToXY(centerX, centerY, angle, radius);                       // 描画開始座標 S
+
+                const l = lerp(5, 50, Math.max(bumps[i].r / (basicRadius * 1.35), 1));      // 血しぶきの長さ（出っ張りが尖っていれば尖っている程長い）
+                const w = randIn(2, 5);                                                     // 血しぶきの幅（コントロールポイント計算用なので、実際は幅の 2 倍値）
+
+                // 出っ張りの頂点から血しぶきの方向を計算し、終点を計算
+                const PS = vector2(S.x - P.x, S.y - P.y);                                   // ベクトル PS
+                const SE = PS.scale(l / PS.length());                                       // ベクトル SE
+                const E = S.add(SE);                                                        // 描画終点
+
+                const N = vector2(SE.y, -SE.x).scale(1 / SE.length());                      // 法線ベクトル
+
+                // 終点から、法線ベクトル方向とその逆方向から 2 点を取得し、描画するベジェ曲線のコントロールポイントとします
+                const CP_L = vector2(E.x + N.x * w, E.y + N.y * w);
+                const CP_R = vector2(E.x - N.x * w, E.y - N.y * w);
+
+                // 2本の二次ベジェで涙型を閉じて塗る
+                ctx.beginPath();
+                ctx.moveTo(S.x, S.y);
+                ctx.quadraticCurveTo(CP_L.x, CP_L.y, E.x, E.y); // 左側
+                ctx.quadraticCurveTo(CP_R.x, CP_R.y, S.x, S.y); // 右側で戻る
+                ctx.closePath();
+
+                const mid = { // S→E の中間を少し “尻側” に寄せてコクを出す
+                    x: (S.x * 0.6 + E.x * 0.4),
+                    y: (S.y * 0.6 + E.y * 0.4)
+                };
+                const L = Math.hypot(E.x - S.x, E.y - S.y);
+                const g = ctx.createRadialGradient(
+                    mid.x, mid.y, 0,
+                    mid.x, mid.y, L * 0.8
+                );
+                g.addColorStop(0.00, "#4b0000");   // 内：濃
+                g.addColorStop(0.75, "#830000");   // 中
+                g.addColorStop(1.00, "#b00000");   // 外：明
+
+                ctx.fillStyle = g;
+                ctx.fill();
+            }
+        }
+
+        ctx.restore();
+    }
+
+    /* ランダムな血痕を描画 */
+    function drawRandomDot() {
+        const count = 200;  // 描画個数
+
+        for (let i = 0; i < count; i++) {
+            const x = randIn(0, width);
+            const y = randIn(0, height);
+            
+            if (x > (width - basicRadius * 2) / 2 && 
+                x < width - (width - basicRadius * 2) / 2 &&
+                y > (height - basicRadius * 2) / 2 &&
+                y < height - ((height - basicRadius * 2) / 2)
+            ) continue;
+            const r = randIn(1, 3);
+
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.closePath();
+            if (r < 1.8) {
+                ctx.fillStyle = "#ba0000";
+            } else {
+                const g = ctx.createRadialGradient(x, y, 0, x, y, r * 1.2);
+                g.addColorStop(0.00, "#8b0000");
+                g.addColorStop(0.65, "#c20000");
+                g.addColorStop(1.00, "#ba0000");
+                ctx.fillStyle = g;
+            }
+            ctx.fill();
+        }
+    }
+
     /* アニメーション再生関連 */
     const time = 300;           // アニメーション再生時間
     let startTime = null;       // 再生開始時間
@@ -159,7 +175,6 @@ export function runBloodEffect(canvas, ctx) {
         ctx.clearRect(0, 0, width, height);
 
         // 血痕の円の描画
-        ctx.fillStyle = '#880000';
         ctx.beginPath()
 
         // パスを閉じるため、初期切替点とコントロールポイントを保持
@@ -239,11 +254,25 @@ export function runBloodEffect(canvas, ctx) {
         ctx.quadraticCurveTo(initCP.x, initCP.y, initTP.x, initTP.y);
         ctx.closePath();
 
+        // ラジアルグラデーション
+        const g = ctx.createRadialGradient(
+            centerX, centerY, basicRadius * 0.05,
+            centerX, centerY, basicRadius * 2.2
+        );
+        
+        g.addColorStop(0.00, "#4d0000");        // かなり暗い赤（内）
+        g.addColorStop(0.55, "#880000");        // 基本色
+        g.addColorStop(1.00, "#c20000");        // やや明（外）
+
+        ctx.fillStyle = g;
         ctx.fill();
 
         // アニメーション予約
         if (elapsed < time) requestAnimationFrame(animation);
-        else cancelAnimationFrame(frame);
+        else {
+            drawTearDrops();
+            drawRandomDot();
+        }
     }
 
     // 初回アニメーション実行
